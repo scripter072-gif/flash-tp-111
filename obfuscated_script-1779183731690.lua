@@ -2181,6 +2181,85 @@ local __NABOLI_OK, __NABOLI_ERR = xpcall(function()
     end
 
     setSliderVisual(sliderValue)
+    -- ==================== AUTO KICK + WEBHOOK (you stole) ====================
+    do
+        local akKicked = false
+        local akConnections = {}
+        local WEBHOOK_URL = Config.webhookUrl or ""
+
+        local function akHasKeyword(text)
+            if typeof(text) ~= "string" then return false end
+            return string.find(string.lower(text), "you stole") ~= nil
+        end
+
+        local function akSendAndKick(detectedText)
+            if akKicked then return end
+            akKicked = true
+
+            if Config.webhookEnabled and Config.webhookUrl and Config.webhookUrl ~= "" then
+                pcall(function()
+                    local requestFn = (syn and syn.request) or (http and http.request) or request or http_request
+                    if requestFn then
+                        requestFn({
+                            Url = Config.webhookUrl,
+                            Method = "POST",
+                            Headers = { ["Content-Type"] = "application/json" },
+                            Body = HttpService:JSONEncode({
+                                username = Config.webhookName or "Naboli Hub Notifier",
+                                avatar_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=150&height=150&format=png",
+                                embeds = {{
+                                    title = "✅ دخل البيت + Kick!",
+                                    color = 0xFF4500,
+                                    fields = {
+                                        { name = "👤 اللاعب", value = "**" .. player.Name .. "** (@" .. player.DisplayName .. ")", inline = true },
+                                        { name = "🆔 ID", value = tostring(player.UserId), inline = true },
+                                        { name = "📝 النص", value = tostring(detectedText), inline = false }
+                                    },
+                                    footer = {
+                                        text = "Naboli Hub | Auto Kick",
+                                        icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=150&height=150&format=png"
+                                    },
+                                    timestamp = DateTime.now():ToIsoDate()
+                                }}
+                            })
+                        })
+                    end
+                end)
+            end
+
+            task.wait(1)
+            pcall(function()
+                player:Kick("Naboli Hub - Stolen item entered base!")
+            end)
+        end
+
+        local function akWatchObject(obj)
+            if not (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")) then return end
+            if akHasKeyword(obj.Text) then
+                akSendAndKick(obj.Text)
+                return
+            end
+            local conn = obj:GetPropertyChangedSignal("Text"):Connect(function()
+                if akHasKeyword(obj.Text) then
+                    akSendAndKick(obj.Text)
+                end
+            end)
+            table.insert(akConnections, conn)
+        end
+
+        local function akWatchGui(gui)
+            for _, obj in ipairs(gui:GetDescendants()) do akWatchObject(obj) end
+            local conn = gui.DescendantAdded:Connect(function(desc) akWatchObject(desc) end)
+            table.insert(akConnections, conn)
+        end
+
+        for _, gui in ipairs(playerGui:GetChildren()) do akWatchGui(gui) end
+        table.insert(akConnections, playerGui.ChildAdded:Connect(function(gui) akWatchGui(gui) end))
+
+        print("[Naboli] Auto Kick + Webhook شغال ✅")
+    end
+    -- ==================== END AUTO KICK ====================
+
     notify("Naboli GUI loaded", Theme.Dim)
     print("Naboli Flash TP Loaded | Credits: Naboli | Trigger 91%")
 end, function(err)
